@@ -165,7 +165,7 @@ class MainWindow(QMainWindow):
         dir_layout = QHBoxLayout()
         self.dir_input = QLineEdit()
         self.dir_input.setPlaceholderText("选择包含发票 PDF 的文件夹...")
-        dir_btn = QPushButton("📁 浏览")
+        dir_btn = QPushButton("📁 发票文件夹路径浏览")
         dir_btn.clicked.connect(self.select_input_dir)
         dir_layout.addWidget(self.dir_input)
         dir_layout.addWidget(dir_btn)
@@ -174,9 +174,9 @@ class MainWindow(QMainWindow):
         tpl_layout = QHBoxLayout()
         self.tpl_input = QLineEdit()
         self.tpl_input.setPlaceholderText("选择出库单模板 PDF...")
-        default_template = resource_path("模板.pdf")
+        default_template = resource_path("template.pdf")
         self.tpl_input.setText(default_template)
-        tpl_btn = QPushButton("📄 浏览")
+        tpl_btn = QPushButton("📄 出库单浏览")
         tpl_btn.clicked.connect(self.select_template_file)
         tpl_layout.addWidget(self.tpl_input)
         tpl_layout.addWidget(tpl_btn)
@@ -218,6 +218,10 @@ class MainWindow(QMainWindow):
             json.dump(config, f, ensure_ascii=False, indent=4)
 
     def load_config(self):
+        # 1. 默认先把当次运行的内置模板最新路径填上
+        default_tpl = resource_path("template.pdf")
+        self.tpl_input.setText(default_tpl)
+
         if Path(CONFIG_FILE).exists():
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -226,7 +230,13 @@ class MainWindow(QMainWindow):
                     self.base_url_input.setText(config.get("base_url", "https://api.openai.com/v1"))
                     self.model_input.setText(config.get("model_name", "gemini-2.5-flash-plus"))
                     self.dir_input.setText(config.get("last_dir", ""))
-                    self.tpl_input.setText(config.get("last_tpl", ""))
+                    
+                    # 2. 核心修复：检查保存的模板路径
+                    saved_tpl = config.get("last_tpl", "")
+                    # 只有当保存的路径不是空的、不包含 "_MEI"（说明是用户自定义的外部永久文件），
+                    # 并且这个文件确实存在时，才覆盖掉默认路径
+                    if saved_tpl and "_MEI" not in saved_tpl and Path(saved_tpl).exists():
+                        self.tpl_input.setText(saved_tpl)
             except:
                 pass
 

@@ -36,13 +36,13 @@ jobs:
     - name: 编译打包 (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        pyinstaller --noconsole --windowed --onefile --name "智能出库单" --add-data "模板.pdf;." app.py
+        pyinstaller --noconsole --windowed --onefile --name "智能出库单" --add-data "template.pdf;." app.py
         Rename-Item -Path "dist\智能出库单.exe" -NewName "AutoInvoice_Windows.exe"
 
     - name: 编译打包并生成 DMG (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        pyinstaller --noconsole --windowed --name "智能出库单" --add-data "模板.pdf:." app.py
+        pyinstaller --noconsole --windowed --name "智能出库单" --add-data "template.pdf:." app.py
         mkdir dmg_staging
         mv dist/智能出库单.app dmg_staging/
         ln -s /Applications dmg_staging/Applications
