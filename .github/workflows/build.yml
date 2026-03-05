@@ -1,0 +1,58 @@
+name: Build App (Windows & macOS)
+
+# 触发条件：每次推送到 main 分支，或者在网页上手动点击运行
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # 使用矩阵策略，同时在 Windows 和 macOS 最新版上运行
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+    - name: 获取代码库
+      uses: actions/checkout@v4
+
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # 使用稳定版本
+
+    - name: 安装依赖包
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: 编译打包 (Windows)
+      if: matrix.os == 'windows-latest'
+      # Windows 环境下，add-data 使用分号 (;) 分隔
+      run: |
+        pyinstaller --noconsole --windowed --name "智能出库单" --add-data "模板.pdf;." app.py
+
+    - name: 编译打包并生成 DMG (macOS)
+      if: matrix.os == 'macos-latest'
+      # macOS 环境下，add-data 使用冒号 (:) 分隔
+      run: |
+        pyinstaller --noconsole --windowed --name "智能出库单" --add-data "模板.pdf:." app.py
+        # 调用 macOS 原生命令将 .app 封装成 .dmg
+        hdiutil create -volname "智能出库单" -srcfolder dist/智能出库单.app -ov -format UDZO dist/智能出库单.dmg
+
+    - name: 上传 Windows 成品 (Artifacts)
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: 智能出库单-Windows
+        path: dist/智能出库单.exe
+
+    - name: 上传 macOS 成品 (Artifacts)
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: 智能出库单-macOS
+        path: dist/智能出库单.dmg
