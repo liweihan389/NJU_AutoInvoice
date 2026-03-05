@@ -35,28 +35,32 @@ jobs:
 
     - name: 编译打包 (Windows)
       if: matrix.os == 'windows-latest'
-      # 增加 --onefile 参数，将其打包成独立的单个 exe 文件
-      run: pyinstaller --noconsole --windowed --onefile --name "智能出库单" --add-data "模板.pdf;." app.py
+      run: |
+        pyinstaller --noconsole --windowed --onefile --name "智能出库单" --add-data "模板.pdf;." app.py
+        Rename-Item -Path "dist\智能出库单.exe" -NewName "AutoInvoice_Windows.exe"
 
     - name: 编译打包并生成 DMG (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         pyinstaller --noconsole --windowed --name "智能出库单" --add-data "模板.pdf:." app.py
-        hdiutil create -volname "智能出库单" -srcfolder dist/智能出库单.app -ov -format UDZO dist/智能出库单.dmg
+        mkdir dmg_staging
+        mv dist/智能出库单.app dmg_staging/
+        ln -s /Applications dmg_staging/Applications
+        hdiutil create -volname "智能出库单" -srcfolder dmg_staging -ov -format UDZO dist/AutoInvoice_macOS.dmg
 
     - name: 上传 Windows 临时成品
       if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: Windows-App
-        path: dist/智能出库单.exe
+        path: dist/AutoInvoice_Windows.exe
 
     - name: 上传 macOS 临时成品
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
         name: macOS-App
-        path: dist/智能出库单.dmg
+        path: dist/AutoInvoice_macOS.dmg
 
   # ==========================================
   # 新增的自动发布环节 (等待 build 环节全部成功后执行)
@@ -82,6 +86,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release_assets/windows/智能出库单.exe
-            release_assets/macos/智能出库单.dmg
-          generate_release_notes: true # 自动生成更新日志
+            release_assets/windows/AutoInvoice_Windows.exe
+            release_assets/macos/AutoInvoice_macOS.dmg
+          generate_release_notes: true
