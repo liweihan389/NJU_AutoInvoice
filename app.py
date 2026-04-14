@@ -69,16 +69,17 @@ class InvoiceWorker(QThread):
             all_output_pdfs = []
             
             for index, pdf_file in enumerate(pdf_files, start=1):
-                grant_no = pdf_file.stem
-                self.log_signal.emit(f"\n📄 开始处理文件: {pdf_file.name} (经费号: {grant_no})")
+                # 🚀 核心修改 1：初始化当前经费号，以防第一页就是发票（兜底机制）
+                current_grant_no = pdf_file.stem
+                self.log_signal.emit(f"\n📄 开始处理文件: {pdf_file.name} (默认初始经费号: {current_grant_no})")
 
                 doc = fitz.open(pdf_file)
-                self.log_signal.emit(f"  - 检测到 {len(doc)} 页发票")
+                self.log_signal.emit(f"  - 检测到 {len(doc)} 页内容")
 
                 for i, page in enumerate(doc, start=1):
-                    img_path = temp_dir / f"{grant_no}_page{i}.jpg"
+                    img_path = temp_dir / f"temp_page_{index}_{i}.jpg"
                     
-                    # 按照 300 DPI 的清晰度渲染图片 (300 / 72 默认 DPI = 4.16)
+                    # 按照 300 DPI 的清晰度渲染图片
                     zoom = 300 / 72  
                     mat = fitz.Matrix(zoom, zoom)
                     pix = page.get_pixmap(matrix=mat)
@@ -88,16 +89,29 @@ class InvoiceWorker(QThread):
 
                     try:
                         self.log_signal.emit(f"  🤖 正在请求 AI 识别第 {i} 页...")
-                        # 传入 API 配置
                         invoice_info = extract_invoice_info(str(img_path), self.api_key, self.base_url, self.model_name)
-                        self.log_signal.emit("  ✅ AI 识别成功")
+                        
+                        # 🚀 核心修改 2：分类路由判断
+                        if invoice_info.get("page_type") == "报销单":
+                            new_grant = invoice_info.get("grant_no", "").strip()
+                            if new_grant:
+                                current_grant_no = new_grant
+                                self.log_signal.emit(f"  📌 [报销单] 识别成功！经费号切换为: 【{current_grant_no}】")
+                            else:
+                                self.log_signal.emit(f"  ⚠️ [报销单] 识别成功，但未能提取到经费号，继续使用: 【{current_grant_no}】")
+                            # 报销单只提取经费号，不需要生成出库单，直接进入下一页
+                            continue 
+                        else:
+                            self.log_signal.emit(f"  ✅ [发票] 识别成功，准备合并至经费号: 【{current_grant_no}】")
+
                     except Exception as e:
                         self.log_signal.emit(f"  ❌ AI 识别失败 ({pdf_file.name} 第{i}页): {str(e)}")
                         continue
 
-                    output_pdf = temp_dir / f"出库单_{grant_no}_{i}.pdf"
+                    # 🚀 核心修改 3：如果是发票，使用携带状态的 current_grant_no 生成 PDF
+                    output_pdf = temp_dir / f"出库单_{current_grant_no}_page{i}.pdf"
                     try:
-                        fill_pdf(self.template_path, str(output_pdf), invoice_info, grant_no)
+                        fill_pdf(self.template_path, str(output_pdf), invoice_info, current_grant_no)
                         all_output_pdfs.append(output_pdf)
                         self.log_signal.emit(f"  ✅ 已生成单页出库单: {output_pdf.name}")
                     except Exception as e:
@@ -114,11 +128,11 @@ class InvoiceWorker(QThread):
                     merger.append(str(pdf))
                 merger.write(self.output_file)
                 merger.close()
-                self.log_signal.emit(f"🎉 全部发票处理完毕！已保存至: {self.output_file}")
+                self.log_signal.emit(f"🎉 全部处理完毕！已保存至: {self.output_file}")
                 self.progress_signal.emit(100)
                 self.finished_signal.emit(True)
             else:
-                self.log_signal.emit("⚠️ 任务结束，但未能生成任何出库单。")
+                self.log_signal.emit("⚠️ 任务结束，未能生成任何出库单。")
                 self.finished_signal.emit(False)
 
         except Exception as e:

@@ -105,25 +105,36 @@ def convert_to_jpg(image_path: str) -> bytes:
 
 
 def extract_invoice_info(image_path, api_key, base_url, model_name):
-    """调用AI读取发票信息并返回JSON"""
+    """调用AI读取信息并判断是报销单还是发票"""
     client = OpenAI(api_key=api_key, base_url=base_url)
 
     image_bytes = convert_to_jpg(image_path)
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
+    # 🚀 核心修改：重写 Prompt，让 AI 先分类，再提取
     prompt = """
-你是一名专业的发票识别助手。请从发票图片中读取以下信息并以严格JSON格式输出,发票上含有几个信息就加入几个items（金额为负数保留，并把"name"项设为null），最多取前五个：
+你是一名专业的财务凭证识别助手。请判断传入的图片是"南京大学日常报销单"还是"发票"，并严格按照对应的JSON格式输出：
+
+情况1：如果是"南京大学日常报销单"（带有经费号等信息的报销封面或审批单）
 {
+  "page_type": "报销单",
+  "grant_no": "提取到的经费项目编号（通常是一串数字或字母组合，请仔细寻找页面上的经费号/项目号）"
+}
+
+情况2：如果是普通的"发票"
+请提取以下信息，发票上含有几个信息就加入几个items（金额为负数保留，并把"name"项设为null），最多取前五个：
+{
+  "page_type": "发票",
   "supplier": "供货厂家（开票公司名称）",
   "invoice_number": "发票号码（一般20位，请自查）",
   "purchase_date": "YYYY年M月D日（发票日期）",
   "entry_date": "YYYY年M月D日（与发票日期相同）",
   "price": "所有物品的总价，一般在发票的右下区域内的数字",
-  "price_uppercase": "price金额的汉语大写，如壹佰贰拾元整"
+  "price_uppercase": "price金额的汉语大写，如壹佰贰拾元整",
   "items": [
     {
       "name": "材料/易耗品名称1（不超过8个字，如有品牌则输出: 品牌+是什么，如"得力胶带"，没有品牌则输出： 是什么，如"电子模块"）",
-      "model": "规格型号(不超8字，超过部分截去，如“单模跳线1560nm FC/PC-FC/PC SMF-28e 光纤”，保留“单模跳线1560nm”即可)",
+      "model": "规格型号(不超8字，超过部分截去，如"单模跳线1560nm FC/PC-FC/PC SMF-28e 光纤"，保留"单模跳线1560nm"即可)",
       "unit": "单位",
       "quantity": 数量(数字),
       "amount": 不含税金额(数字),
@@ -158,7 +169,6 @@ def extract_invoice_info(image_path, api_key, base_url, model_name):
             print("❌ 第{}/3次尝试失败，正在重新尝试".format(i+1))
             continue
 
-
         content = response.choices[0].message.content.strip()
 
         # 🧹 清理markdown包裹符号
@@ -175,18 +185,23 @@ def extract_invoice_info(image_path, api_key, base_url, model_name):
             print("⚠️ JSON解析失败，AI返回原文如下：")
             print("❌ 第{}/3次尝试失败，正在重新尝试".format(i+1))
             print(content)
-            raise
-    
+            if i == 2:
+                raise
+
+    # 🚀 核心修改：如果是报销单，直接返回，跳过发票专属的处理逻辑
+    if data.get("page_type") == "报销单":
+        return data
+
+    # 以下为原有发票数据的后处理逻辑
     fix_invoice_number(data)
     merge_negative_items(data)
-    # ✅ 逻辑1：只保留前二条，多余项压缩成“详见发票”
+    
     items = data.get("items", [])
     if len(items) > 2:
         items = items[:2] + [{"name": "详见发票", "model": "", "unit": "", "quantity": "", "amount": "", "tax": ""}]
         data["items"] = items
 
-    # ✅ 逻辑2：计算单价
-    for item in data["items"]:
+    for item in data.get("items", []):
         try:
             if item.get("name") == "详见发票":
                 item["unit_price"] = None
